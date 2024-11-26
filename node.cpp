@@ -20,12 +20,22 @@ static int bootstrap_port = 8080; // port of the bootstrap node.
 class Node {
 
 private:
-	string node_ip;
-	int port;
+	string node_ip; //running instance's ip
+	int port;	//running instance's port
 	int total_peers;
 	map <int, pair<string, int>> peers; //Map of peer sockets (ip,port)
 	int server_fd;
 	Ledger ledger; //local copy of the Ledger in the node.
+	
+
+	void register_to_bootstrap(void)
+	{
+
+		string cmd = "REGISTER";
+		string my_reg = cmd + " " + node_ip + " " + to_string(port);		
+		cout << "Registering to the Bootstrap node as: " << my_reg << endl;
+
+	}
 
 	void handleConnection(int client_socket, Ledger &ledger)
 	{
@@ -45,15 +55,15 @@ private:
 			if(*my_port == bootstrap_port) {
 				string register_cmd = "REGISTER";
 			//parse the data.
-				string command, node_ip;
-				int node_port;
+				string command, peer_node_ip;
+				int peer_node_port;
 				//create a string stream for quick parsing.	
 				istringstream ss(buffer);
-				ss >> command >> node_ip >> node_port;
+				ss >> command >> peer_node_ip >> peer_node_port;
 				if( command.compare(register_cmd) == 0)
 				{
 					total_peers +=1;
-					peers[total_peers] = make_pair(node_ip, node_port);
+					peers[total_peers] = make_pair(peer_node_ip, peer_node_port);
 					cout << "Added backbone peer node: " << peers[total_peers].first << " , " << peers[total_peers].second << endl;
 
 				} else {
@@ -78,6 +88,11 @@ public:
 	int start()
 	{
 		cout << "test start()" << endl;
+
+
+		if(*my_port != bootstrap_port)
+			register_to_bootstrap();			
+
 		struct sockaddr_in address;
 		int addrlen = sizeof(address);
 
@@ -106,7 +121,8 @@ public:
 
 		if(port == bootstrap_port)
 			cout << "BOOTSTRAP NODE operation" << endl;
-
+		else
+			cout << "Backbone node operation" <<  endl;
 
 		//accept connections
 		while(true) {
@@ -118,7 +134,6 @@ public:
 			//handle the new connection.
 			//detach so it runs on parallel without 
 			//blocking new connections etc.
-		//	thread(handleConnection, client_socket, ref(ledger)).detach();
 			thread([this, client_socket]() { 
 					this->handleConnection(client_socket, this->ledger);	
 					}).detach();
@@ -149,7 +164,6 @@ int main(int argc, char *argv[])
 	
 	Node node(ip,port);
 	thread node_thread(&Node::start, &node);
-
 
 	node_thread.join();	
 
