@@ -27,7 +27,58 @@ private:
 	int server_fd;
 	Ledger ledger; //local copy of the Ledger in the node.
 
+	
+	// BOOTSTRAP NODE operation	
+	void send_updated_peer_list(void) {
+	
+		for(const auto& peer: peers) {
+			int client_socket;
+			struct sockaddr_in server_address;
 
+			// Create socket
+			if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+				cerr << "Socket creation for peer connection failed\n";
+				return;
+			}
+
+			server_address.sin_family = AF_INET;
+			server_address.sin_port = htons(peer.second.second);
+
+			// Convert IP address to binary form
+			if (inet_pton(AF_INET, peer.second.first.c_str(), &server_address.sin_addr) <= 0) {
+				cerr << "Invalid peer IP address\n";
+				return;
+			}
+
+			// Connect to node
+			if (connect(client_socket, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
+				cout << "Connection to peer node failed\n";
+				return;
+			}
+			cout << "Connected to node(send_updated_peer_list) at " << peer.second.first << ":" << peer.second.second << endl;
+			
+			for( const auto& info_peer: peers) {
+				string update; //update message to be sent.
+				update = "UPDATE " + info_peer.second.first + " " + to_string(info_peer.second.second)+" ";
+
+				while (true) {
+					// Send the registration message to bootstap node.
+					ssize_t bytes_sent = send(client_socket, update.c_str(), update.length(), 0);
+
+					if (bytes_sent == -1) {
+						cerr << "Failed to send message to bootstrap node\n";
+						continue;  // retry.
+					}
+					cout << "Sent update message: " << update << endl;
+					break;
+				}
+			}
+			// Close the socket
+			close(client_socket);
+		}
+	}
+
+	// BACKBONE node operation
 	void register_to_bootstrap(void)
 	{
 
@@ -80,6 +131,14 @@ private:
 		cout << "Disconnected from node.\n";
 	}
 
+	void print_backbone_nodes(void)
+	{
+		cout << "Registered peers: " << total_peers << endl;
+		for(const auto& peer: peers)
+			cout << "IP: " << peer.second.first << " Port: " << peer.second.second << endl;
+
+	}
+
 	void handleConnection(int client_socket, Ledger &ledger)
 	{
 		cout << "handleConnection() client_socket: " << client_socket << endl;
@@ -109,6 +168,10 @@ private:
 					peers[total_peers] = make_pair(peer_node_ip, peer_node_port);
 					cout << "Added backbone peer node: " << peers[total_peers].first << " , " << peers[total_peers].second << endl;
 
+					print_backbone_nodes();
+
+					//send message informing all-peers for the updated peer-list.
+					send_updated_peer_list();
 				} else {
 					cout << "received non-REGISTER command" << endl;
 					break; //ignore otherwise
