@@ -27,10 +27,10 @@ private:
 	int server_fd;
 	Ledger ledger; //local copy of the Ledger in the node.
 
-	
-	// BOOTSTRAP NODE operation	
+
+	// BOOTSTRAP NODE operation
 	void send_updated_peer_list(void) {
-	
+
 		for(const auto& peer: peers) {
 			int client_socket;
 			struct sockaddr_in server_address;
@@ -56,7 +56,7 @@ private:
 				return;
 			}
 			cout << "Connected to node(send_updated_peer_list) at " << peer.second.first << ":" << peer.second.second << endl;
-			
+
 			for( const auto& info_peer: peers) {
 				string update; //update message to be sent.
 				update = "UPDATE " + info_peer.second.first + " " + to_string(info_peer.second.second)+" ";
@@ -75,6 +75,41 @@ private:
 			}
 			// Close the socket
 			close(client_socket);
+		}
+	}
+	
+
+	//BACKBONE nodes
+	void handle_message(string buf)
+	{
+		istringstream iss(buf);
+		string word;
+
+		while (iss >> word) {
+			if (word == "UPDATE") {
+				cout << "Received UPDATE msg from Bootstrap node" << endl;
+				string p_ip;
+				string p_port;// as string and convert when saving as a map.
+				
+
+				// fetch the IP and port following the "UPDATE" keyword
+				if(iss >> p_ip >> p_port) {
+
+					bool portExists = false;
+					for (const auto& peer : peers) {
+						if (peer.second.second == stoi(p_port)) {
+							portExists = true;
+							break;
+						}
+					}
+					//if we don't have already added this peer, add it on peers Map.
+					if(!portExists) {
+						peers[total_peers] = {p_ip, stoi(p_port)}; // Store in the map
+						cout << "Added peer IP: " << peers[total_peers].first << " Port: " << peers[total_peers].second << endl;
+						total_peers++; // Increment the key counter
+					}
+				}
+			}
 		}
 	}
 
@@ -116,7 +151,7 @@ private:
 		while (true) {
 			// Send the registration message to bootstap node.
 			ssize_t bytes_sent = send(client_socket, my_reg.c_str(), my_reg.length(), 0);
-			
+
 
 			if (bytes_sent == -1) {
 				cerr << "Failed to send message to bootstrap node\n";
@@ -176,10 +211,11 @@ private:
 					cout << "received non-REGISTER command" << endl;
 					break; //ignore otherwise
 				}
+			} else { // code executed by BACKBONE nodes.
+
+				handle_message(buffer);
 			}
-
 		}
-
 		close(client_socket);
 	}
 
