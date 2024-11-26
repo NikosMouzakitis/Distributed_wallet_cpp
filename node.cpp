@@ -9,29 +9,60 @@
 #include <unistd.h>
 #include <map>
 #include <cstring>
+#include <sstream>
 #include <cstdlib> // malloc
 #include "ledger.h" //Ledger/Transaction classes
 using namespace std;
 
 int *my_port;
-
-
-
+static int bootstrap_port = 8080; // port of the bootstrap node.
 
 class Node {
 
 private:
 	string node_ip;
 	int port;
+	int total_peers;
 	map <int, pair<string, int>> peers; //Map of peer sockets (ip,port)
 	int server_fd;
 	Ledger ledger; //local copy of the Ledger in the node.
 
-	static void handleConnection(int client_socket, Ledger &ledger)
+	void handleConnection(int client_socket, Ledger &ledger)
 	{
 		cout << "handleConnection() client_socket: " << client_socket << endl;
+				
+		char buffer[1024] = {0};
+		while(true) {
+			memset(buffer, 0, sizeof(buffer)); // zeroing the reception buffer.
 
-		
+			int bytes_read = read(client_socket, buffer, 1024); //perform read.
+
+			if(bytes_read <= 0)
+				break;
+			cout << "Received: " << buffer << endl;
+			
+			// BOOTSTRAP CODE
+			if(*my_port == bootstrap_port) {
+				string register_cmd = "REGISTER";
+			//parse the data.
+				string command, node_ip;
+				int node_port;
+				//create a string stream for quick parsing.	
+				istringstream ss(buffer);
+				ss >> command >> node_ip >> node_port;
+				if( command.compare(register_cmd) == 0)
+				{
+					total_peers +=1;
+					peers[total_peers] = make_pair(node_ip, node_port);
+					cout << "Added backbone peer node: " << peers[total_peers].first << " , " << peers[total_peers].second << endl;
+
+				} else {
+					cout << "received non-REGISTER command" << endl;
+					break; //ignore otherwise	
+				}	
+			}		
+
+		}	
 
 		close(client_socket);	
 	}
@@ -40,6 +71,8 @@ public:
 	//constructor
 	Node(const string& ip,int port) : node_ip(ip), port(port) {
 		cout << "node() constructor port: " <<port<<endl;
+		total_peers = 0; //initalization on 0. Bootstrap node, increments on REGISTER command.
+				 // backbone nodes, increment when receiving PeerInfo from Bootstrap node.
 	}
 
 	int start()
@@ -71,6 +104,10 @@ public:
 		}
 		cout << "node running on port " << port << endl;
 
+		if(port == bootstrap_port)
+			cout << "BOOTSTRAP NODE operation" << endl;
+
+
 		//accept connections
 		while(true) {
 			int client_socket = accept(server_fd, (struct sockaddr *) & address, (socklen_t*)&addrlen);
@@ -81,7 +118,10 @@ public:
 			//handle the new connection.
 			//detach so it runs on parallel without 
 			//blocking new connections etc.
-			thread(handleConnection, client_socket, ref(ledger)).detach();
+		//	thread(handleConnection, client_socket, ref(ledger)).detach();
+			thread([this, client_socket]() { 
+					this->handleConnection(client_socket, this->ledger);	
+					}).detach();
 		}
 	}
 
@@ -106,7 +146,7 @@ int main(int argc, char *argv[])
 	*my_port = port;
 	cout << "running on port: " << *my_port << endl;
 
-
+	
 	Node node(ip,port);
 	thread node_thread(&Node::start, &node);
 
@@ -115,8 +155,3 @@ int main(int argc, char *argv[])
 
 	return (0);
 }
-
-
-
-
-
