@@ -26,21 +26,64 @@ private:
 	map <int, pair<string, int>> peers; //Map of peer sockets (ip,port)
 	int server_fd;
 	Ledger ledger; //local copy of the Ledger in the node.
-	
+
 
 	void register_to_bootstrap(void)
 	{
 
 		string cmd = "REGISTER";
-		string my_reg = cmd + " " + node_ip + " " + to_string(port);		
+		string my_reg = cmd + " " + node_ip + " " + to_string(port);
 		cout << "Registering to the Bootstrap node as: " << my_reg << endl;
 
+		string n_ip = "127.0.0.1";
+		int n_port = bootstrap_port;
+		int client_socket;
+		struct sockaddr_in server_address;
+
+		// Create socket
+		if ((client_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+			cerr << "Socket creation for bootstrap connection failed\n";
+			return;
+		}
+
+		server_address.sin_family = AF_INET;
+		server_address.sin_port = htons(n_port);
+
+		// Convert IP address to binary form
+		if (inet_pton(AF_INET, n_ip.c_str(), &server_address.sin_addr) <= 0) {
+			cerr << "Invalid bootstrap  IP address\n";
+			return;
+		}
+
+		// Connect to node
+		if (connect(client_socket, (struct sockaddr*)&server_address, sizeof(server_address)) < 0) {
+			cout << "Connection to bootstrap node failed\n";
+			return;
+		}
+		cout << "Connected to node at " << n_ip << ":" << n_port << endl;
+
+		while (true) {
+			// Send the registration message to bootstap node.
+			ssize_t bytes_sent = send(client_socket, my_reg.c_str(), my_reg.length(), 0);
+			
+
+			if (bytes_sent == -1) {
+				cerr << "Failed to send message to bootstrap node\n";
+				continue;  // retry.
+			}
+
+			cout << "Sent registration message: " << my_reg << endl;
+			break;
+		}
+		// Close the socket
+		close(client_socket);
+		cout << "Disconnected from node.\n";
 	}
 
 	void handleConnection(int client_socket, Ledger &ledger)
 	{
 		cout << "handleConnection() client_socket: " << client_socket << endl;
-				
+
 		char buffer[1024] = {0};
 		while(true) {
 			memset(buffer, 0, sizeof(buffer)); // zeroing the reception buffer.
@@ -50,14 +93,14 @@ private:
 			if(bytes_read <= 0)
 				break;
 			cout << "Received: " << buffer << endl;
-			
+
 			// BOOTSTRAP CODE
 			if(*my_port == bootstrap_port) {
 				string register_cmd = "REGISTER";
-			//parse the data.
+				//parse the data.
 				string command, peer_node_ip;
 				int peer_node_port;
-				//create a string stream for quick parsing.	
+				//create a string stream for quick parsing.
 				istringstream ss(buffer);
 				ss >> command >> peer_node_ip >> peer_node_port;
 				if( command.compare(register_cmd) == 0)
@@ -68,13 +111,13 @@ private:
 
 				} else {
 					cout << "received non-REGISTER command" << endl;
-					break; //ignore otherwise	
-				}	
-			}		
+					break; //ignore otherwise
+				}
+			}
 
-		}	
+		}
 
-		close(client_socket);	
+		close(client_socket);
 	}
 
 public:
@@ -82,7 +125,7 @@ public:
 	Node(const string& ip,int port) : node_ip(ip), port(port) {
 		cout << "node() constructor port: " <<port<<endl;
 		total_peers = 0; //initalization on 0. Bootstrap node, increments on REGISTER command.
-				 // backbone nodes, increment when receiving PeerInfo from Bootstrap node.
+		// backbone nodes, increment when receiving PeerInfo from Bootstrap node.
 	}
 
 	int start()
@@ -91,7 +134,7 @@ public:
 
 
 		if(*my_port != bootstrap_port)
-			register_to_bootstrap();			
+			register_to_bootstrap();
 
 		struct sockaddr_in address;
 		int addrlen = sizeof(address);
@@ -132,11 +175,11 @@ public:
 				continue; // just continue on failure.
 			}
 			//handle the new connection.
-			//detach so it runs on parallel without 
+			//detach so it runs on parallel without
 			//blocking new connections etc.
-			thread([this, client_socket]() { 
-					this->handleConnection(client_socket, this->ledger);	
-					}).detach();
+			thread([this, client_socket]() {
+				this->handleConnection(client_socket, this->ledger);
+			}).detach();
 		}
 	}
 
@@ -150,7 +193,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	string ip = argv[1];	
+	string ip = argv[1];
 	int port = stoi(argv[2]);
 	my_port = (int *)malloc(sizeof(int));
 	if(my_port == NULL)
@@ -161,11 +204,11 @@ int main(int argc, char *argv[])
 	*my_port = port;
 	cout << "running on port: " << *my_port << endl;
 
-	
+
 	Node node(ip,port);
 	thread node_thread(&Node::start, &node);
 
-	node_thread.join();	
+	node_thread.join();
 
 	return (0);
 }
