@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <map>
+#include <mutex>
 #include <cstring>
 #include <sstream>
 #include <cstdlib> // malloc
@@ -25,8 +26,9 @@ private:
 	int total_peers;
 	map <int, pair<string, int>> peers; //Map of peer sockets (ip,port)
 	int server_fd;
+	std::map <int, int> vector_clock; //vector clock used for ordering transactions.
+	std::mutex  clock_mutex;  //mutex to hold when modifying vector clock.
 	Ledger ledger; //local copy of the Ledger in the node.
-
 
 	// BOOTSTRAP NODE operation
 	void send_updated_peer_list(void) {
@@ -77,7 +79,22 @@ private:
 			close(client_socket);
 		}
 	}
-	
+
+
+	//BACKBONE nodes	
+	void initializeVectorClock(int p_port) {
+		std::lock_guard<std::mutex> lock(clock_mutex);
+		vector_clock[p_port] = 0;
+	}
+	//BACKBONE nodes
+	void printVectorClock() {
+		std::lock_guard<std::mutex> lock(clock_mutex); // Protect access to the vector clock
+		std::cout << "Current Vector Clock: { ";
+		for (const auto& entry : vector_clock) {
+			std::cout << entry.first << ": " << entry.second << ", ";
+		}
+		std::cout << "}" << std::endl;
+	}
 
 	//BACKBONE nodes
 	void handle_message(string buf)
@@ -108,14 +125,26 @@ private:
 					if(!portExists) {
 						peers[total_peers] = {p_ip, stoi(p_port)}; // Store in the map
 						cout << "Added peer IP: " << peers[total_peers].first << " Port: " << peers[total_peers].second << endl;
+						initializeVectorClock(stoi(p_port)); //initialize the vector clock for the newly added node.
 						total_peers++; // Increment the key counter
 					}
 				}
-
+				printVectorClock();
 				//// NEW TRANSACTION from a wallet.
 			} else if(word == "TRANSACTION") {
 				cout << "Received TRANSACTION msg from a wallet application" << endl;
+				string sender, receiver, samount;
+				int amount;
 
+				if(iss >> sender >> receiver >> samount) {
+					amount = stoi(samount); //turn amount to integer.
+					if(amount <=0) //sanity check
+						break;
+					
+					cout << "got for processing: " << sender << "  " << receiver << "  " << amount << endl;	
+				
+
+				}	
 
 			}
 		}
@@ -220,7 +249,6 @@ private:
 					break; //ignore otherwise
 				}
 			} else { // code executed by BACKBONE nodes.
-
 				handle_message(buffer);
 			}
 		}
