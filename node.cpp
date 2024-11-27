@@ -86,6 +86,8 @@ private:
 		string word;
 
 		while (iss >> word) {
+
+			////Update message arrived from Bootstrap node.
 			if (word == "UPDATE") {
 				cout << "Received UPDATE msg from Bootstrap node" << endl;
 				string p_ip;
@@ -109,6 +111,12 @@ private:
 						total_peers++; // Increment the key counter
 					}
 				}
+
+				//// NEW TRANSACTION from a wallet.
+			} else if(word == "TRANSACTION") {
+				cout << "Received TRANSACTION msg from a wallet application" << endl;
+
+
 			}
 		}
 	}
